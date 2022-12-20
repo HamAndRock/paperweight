@@ -27,6 +27,7 @@ import io.papermc.paperweight.userdev.internal.setup.SetupHandler
 import io.papermc.paperweight.userdev.internal.setup.util.HashFunctionBuilder
 import io.papermc.paperweight.userdev.internal.setup.util.siblingHashesFile
 import io.papermc.paperweight.userdev.internal.setup.util.siblingLogFile
+import io.papermc.paperweight.util.*
 import io.papermc.paperweight.util.constants.*
 import java.nio.file.Path
 import org.gradle.api.artifacts.Configuration
@@ -58,6 +59,7 @@ class RemapMinecraft(
             launcher = context.defaultJavaLauncher,
             workingDir = cache
         )
+        updateMappings(outputJar)
     }
 
     override fun touchHashFunctionBuilder(builder: HashFunctionBuilder) {
@@ -77,7 +79,7 @@ class RemapMinecraft(
             cache: Path,
         ): RemapMinecraft {
             val remapper = context.project.configurations.getByName(REMAPPER_CONFIG).also { it.resolve() } // resolve remapper
-            return RemapMinecraft(
+            val remap = RemapMinecraft(
                 minecraftRemapArgs,
                 filteredVanillaJar,
                 minecraftLibraryJars,
@@ -86,6 +88,7 @@ class RemapMinecraft(
                 outputJar,
                 cache,
             )
+            return remap
         }
     }
 }

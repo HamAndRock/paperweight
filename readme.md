@@ -1,3 +1,8 @@
+## Pro Gatecraft gamery
+
+toto je humus, urcite to jde udelat lepe. Pro vybuildeni na localu 
+je potreba runnout command `./gradlew publishToMavenLocal`. A pak refreshnout deps v projektu
+
 ## paperweight
 
 `paperweight` consists of three Gradle plugins:

@@ -21,6 +21,8 @@ repositories {
             includeModule("org.cadixdev", "mercury")
         }
     }
+    maven("https://repo.jpenilla.xyz/snapshots/")
+    maven("https://maven.fabricmc.net")
     maven("https://maven.quiltmc.org/repository/release/") {
         mavenContent {
             includeGroup("org.quiltmc")

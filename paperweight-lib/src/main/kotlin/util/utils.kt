@@ -23,20 +23,19 @@
 package io.papermc.paperweight.util
 
 import com.github.salomonbrys.kotson.fromJson
+import com.github.salomonbrys.kotson.keys
 import com.google.gson.*
 import dev.denwav.hypo.model.ClassProviderRoot
 import io.papermc.paperweight.DownloadService
 import io.papermc.paperweight.PaperweightException
 import io.papermc.paperweight.tasks.*
 import io.papermc.paperweight.util.constants.*
-import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
+import javassist.ClassPool
+import javassist.CtClass
+import javassist.CtField
 import java.lang.reflect.Type
 import java.net.URI
 import java.net.URL
-import java.nio.file.Path
-import java.nio.file.Paths
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -61,6 +60,9 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.kotlin.dsl.*
+import java.io.*
+import java.nio.file.*
+import java.util.jar.JarFile
 
 val gson: Gson = GsonBuilder().disableHtmlEscaping().setPrettyPrinting().registerTypeHierarchyAdapter(Path::class.java, PathJsonConverter()).create()
 
@@ -288,3 +290,48 @@ fun FileCollection.toJarClassProviderRoots(): List<ClassProviderRoot> =
         .filter { p -> p.isLibraryJar }
         .map { p -> ClassProviderRoot.fromJar(p) }
         .toList()
+
+
+fun updateMappings(binaryJar: Path) {
+    println(System.getProperty("user.dir") )
+    val jsonObject = JsonParser().parse(Files.newBufferedReader(Paths.get(System.getProperty("user.dir") + "/mappings.json"))).asJsonObject;
+    jsonObject.keys().forEach { className ->
+        val jarFile = JarFile(binaryJar.toFile())
+        val zipEntry = jarFile.getJarEntry(className)
+        val fis = jarFile.getInputStream(zipEntry)
+        println(className)
+
+        val pool: ClassPool = ClassPool.getDefault()
+        val cc: CtClass = pool.makeClass(fis)
+        fis.close()
+        jarFile.close()
+        jsonObject.get(className).asJsonArray.forEach { fieldName ->
+            println(fieldName)
+            val cm: CtField = cc.getDeclaredField(fieldName.asString)
+            println(cm.modifiers)
+            cm.modifiers = javassist.Modifier.PUBLIC
+        }
+        val out = DataOutputStream(
+            FileOutputStream(
+                System.getProperty("user.dir") + "/" + className.replace(
+                    "/",
+                    "."
+                )
+            )
+        )
+        cc.classFile.write(out)
+        val launchenv: MutableMap<String, String?> = HashMap()
+        val launchuri = URI.create("jar:" + binaryJar.toUri())
+        launchenv["create"] = "true"
+        FileSystems.newFileSystem(launchuri, launchenv).use { zipfs ->
+            val externalClassFile =
+                Paths.get(System.getProperty("user.dir") + "\\" + className.replace("/", "."))
+            val pathInJarfile = zipfs.getPath(className)
+            // copy a file into the zip file
+            Files.copy(
+                externalClassFile, pathInJarfile,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
+}

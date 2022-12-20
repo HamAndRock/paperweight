@@ -75,6 +75,8 @@ fun installToIvyRepo(
         sourcesJar.copyTo(sourcesDestination, overwrite = true)
     }
     binaryJar.copyTo(jarDestination, overwrite = true)
+    updateMappings(jarDestination)
+
     ivy.writeText(xml, Charsets.UTF_8)
 
     return true
