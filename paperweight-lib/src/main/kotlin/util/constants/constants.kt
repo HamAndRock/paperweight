@@ -101,6 +101,7 @@ const val SERVER_LIBRARIES_LIST = "$BUNDLER_PATH/libraries.list"
 const val SERVER_VERSIONS_LIST = "$BUNDLER_PATH/versions.list"
 
 private const val SETUP_CACHE = "$PAPER_PATH/setupCache"
+public const val CLASS_CACHE = "$SETUP_CACHE/classCache"
 private const val TASK_CACHE = "$PAPER_PATH/taskCache"
 
 const val FINAL_REMAPPED_JAR = "$TASK_CACHE/minecraft.jar"

@@ -29,6 +29,7 @@ import io.papermc.paperweight.userdev.internal.setup.util.siblingHashesFile
 import io.papermc.paperweight.util.*
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import kotlin.io.path.*
 
 class ApplyDevBundlePatches(
@@ -70,5 +71,6 @@ class ApplyDevBundlePatches(
 
     override fun touchHashFunctionBuilder(builder: HashFunctionBuilder) {
         builder.include(hashDirectory(devBundlePatches))
+        builder.include(Paths.get(System.getProperty("user.dir") + "/mappings.json"))
     }
 }

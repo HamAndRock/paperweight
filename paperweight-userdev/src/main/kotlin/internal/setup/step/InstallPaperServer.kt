@@ -41,6 +41,7 @@ fun installPaperServer(
         dependencies,
         serverJar,
         serverSourcesJar,
+        cache
     )
     if (didInstall) {
         UserdevSetup.LOGGER.lifecycle(":installed server artifacts to cache")

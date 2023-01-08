@@ -59,7 +59,7 @@ class RemapMinecraft(
             launcher = context.defaultJavaLauncher,
             workingDir = cache
         )
-        updateMappings(outputJar)
+//        updateMappings(outputJar) TODO might be needed
     }
 
     override fun touchHashFunctionBuilder(builder: HashFunctionBuilder) {

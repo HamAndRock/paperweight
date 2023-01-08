@@ -52,9 +52,12 @@ fun installToIvyRepo(
     dependencies: List<String>,
     binaryJar: Path,
     sourcesJar: Path?,
+    cache: Path,
 ): Boolean {
     val (module, versionDir) = parseModuleLocation(artifactCoordinates, repo)
     val (_, name, version) = module
+
+    println(repo.toString())
 
     versionDir.createDirectories()
 
@@ -75,7 +78,7 @@ fun installToIvyRepo(
         sourcesJar.copyTo(sourcesDestination, overwrite = true)
     }
     binaryJar.copyTo(jarDestination, overwrite = true)
-    updateMappings(jarDestination)
+    updateMappings(jarDestination, cache)
 
     ivy.writeText(xml, Charsets.UTF_8)
 

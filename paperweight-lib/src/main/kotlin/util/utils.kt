@@ -24,23 +24,27 @@ package io.papermc.paperweight.util
 
 import com.github.salomonbrys.kotson.fromJson
 import com.github.salomonbrys.kotson.keys
+import com.github.salomonbrys.kotson.string
 import com.google.gson.*
 import dev.denwav.hypo.model.ClassProviderRoot
 import io.papermc.paperweight.DownloadService
 import io.papermc.paperweight.PaperweightException
 import io.papermc.paperweight.tasks.*
 import io.papermc.paperweight.util.constants.*
-import javassist.ClassPool
-import javassist.CtClass
-import javassist.CtField
+import java.io.*
 import java.lang.reflect.Type
 import java.net.URI
 import java.net.URL
+import java.nio.file.*
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.Optional
 import java.util.concurrent.ThreadLocalRandom
+import java.util.jar.JarFile
+import javassist.ClassPool
+import javassist.CtClass
+import javassist.CtField
 import kotlin.io.path.*
 import org.cadixdev.lorenz.merge.MergeResult
 import org.gradle.api.Project
@@ -60,9 +64,7 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.kotlin.dsl.*
-import java.io.*
-import java.nio.file.*
-import java.util.jar.JarFile
+import xyz.jpenilla.reflectionremapper.ReflectionRemapper
 
 val gson: Gson = GsonBuilder().disableHtmlEscaping().setPrettyPrinting().registerTypeHierarchyAdapter(Path::class.java, PathJsonConverter()).create()
 
@@ -292,46 +294,76 @@ fun FileCollection.toJarClassProviderRoots(): List<ClassProviderRoot> =
         .toList()
 
 
-fun updateMappings(binaryJar: Path) {
-    println(System.getProperty("user.dir") )
-    val jsonObject = JsonParser().parse(Files.newBufferedReader(Paths.get(System.getProperty("user.dir") + "/mappings.json"))).asJsonObject;
-    jsonObject.keys().forEach { className ->
-        val jarFile = JarFile(binaryJar.toFile())
-        val zipEntry = jarFile.getJarEntry(className)
-        val fis = jarFile.getInputStream(zipEntry)
-        println(className)
+fun updateMappings(binaryJar: Path, cachePath: Path) {
+    // TODO extract the tiny file from meta-info from server jar
+    val file = Paths.get(System.getProperty("user.dir") + "/reobf.tiny").toFile()
+    val remapper: ReflectionRemapper = ReflectionRemapper.forMappings(FileInputStream(file), "mojang+yarn", "spigot")
 
-        val pool: ClassPool = ClassPool.getDefault()
-        val cc: CtClass = pool.makeClass(fis)
-        fis.close()
-        jarFile.close()
-        jsonObject.get(className).asJsonArray.forEach { fieldName ->
-            println(fieldName)
-            val cm: CtField = cc.getDeclaredField(fieldName.asString)
-            println(cm.modifiers)
-            cm.modifiers = javassist.Modifier.PUBLIC
-        }
-        val out = DataOutputStream(
-            FileOutputStream(
-                System.getProperty("user.dir") + "/" + className.replace(
-                    "/",
-                    "."
-                )
-            )
-        )
-        cc.classFile.write(out)
-        val launchenv: MutableMap<String, String?> = HashMap()
-        val launchuri = URI.create("jar:" + binaryJar.toUri())
-        launchenv["create"] = "true"
-        FileSystems.newFileSystem(launchuri, launchenv).use { zipfs ->
-            val externalClassFile =
-                Paths.get(System.getProperty("user.dir") + "\\" + className.replace("/", "."))
-            val pathInJarfile = zipfs.getPath(className)
-            // copy a file into the zip file
-            Files.copy(
-                externalClassFile, pathInJarfile,
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        }
+    Files.createDirectories(cachePath.resolve(CLASS_CACHE));
+
+    val jsonObject = JsonParser().parse(Files.newBufferedReader(Paths.get(System.getProperty("user.dir") + "/mappings.json"))).asJsonObject;
+    val serverPath = jsonObject.getAsJsonPrimitive("serverPath").string;
+    jsonObject.getAsJsonObject("mappings").keys().forEach { className ->
+        updateJarFile(className, remapper, jsonObject, binaryJar, cachePath)
+    }
+    cachePath.resolve(CLASS_CACHE).toFile().listFiles()?.forEach { e -> Files.delete(e.toPath()) }
+    jsonObject.getAsJsonObject("mappings").keys().forEach { className ->
+        updateJarFile(className, remapper, jsonObject, Paths.get(serverPath), cachePath, true)
     }
 }
+
+fun updateJarFile(className: String, remapper: ReflectionRemapper, jsonObject: JsonObject, binaryJar: Path, cachePath: Path, useRemapper: Boolean = false) {
+    val jarFile = JarFile(binaryJar.toFile())
+    val remappedClassName = remapper.remapClassName(className.replace(".class", "").replace("/", "."))
+    val remappedClassNameClean = remappedClassName.replace(".", "/") + ".class"
+    val realClassName = if (useRemapper) remappedClassNameClean else className
+    val zipEntry = jarFile.getJarEntry(realClassName)
+    val fis = jarFile.getInputStream(zipEntry)
+
+
+
+
+    val mappingsByObfField = remapper.javaClass.getDeclaredField("mappingsByObf");
+    mappingsByObfField.isAccessible = true;
+    val mappings = (mappingsByObfField.get(remapper) as Map<*, *>).get(remappedClassName)
+    val fieldsDeobfToObf = mappings?.javaClass?.getDeclaredMethod("fieldsDeobfToObf")
+    fieldsDeobfToObf?.isAccessible = true;
+    val finalMappings = fieldsDeobfToObf?.invoke(mappings) as Map<*, String>
+
+
+    val pool: ClassPool = ClassPool.getDefault()
+    val cc: CtClass = pool.makeClass(fis)
+    fis.close()
+    jarFile.close()
+    jsonObject.getAsJsonObject("mappings").get(className).asJsonArray.forEach { fieldName ->
+        println(fieldName)
+        val cm: CtField = cc.getDeclaredField(if (useRemapper) finalMappings.getOrDefault(fieldName.asString, fieldName.asString) else fieldName.asString)
+        cm.modifiers = javassist.Modifier.PUBLIC
+    }
+    val out = DataOutputStream(
+        FileOutputStream(
+            cachePath.resolve(CLASS_CACHE).toString() + "/" + realClassName.replace(
+                "/",
+                "."
+            )
+        )
+    )
+    cc.classFile.write(out)
+    out.close();
+    val launchenv: MutableMap<String, String?> = HashMap()
+    val launchuri = URI.create("jar:" + binaryJar.toUri())
+    launchenv["create"] = "true"
+    val newFileSystem = FileSystems.newFileSystem(launchuri, launchenv)
+    newFileSystem.use { zipfs ->
+        val externalClassFile =
+            Paths.get(cachePath.resolve(CLASS_CACHE).toString() + "\\" + realClassName.replace("/", "."))
+        val pathInJarfile = zipfs.getPath(realClassName)
+        // copy a file into the zip file
+        Files.copy(
+            externalClassFile, pathInJarfile,
+            StandardCopyOption.REPLACE_EXISTING
+        )
+    }
+    newFileSystem.close();
+}
+
